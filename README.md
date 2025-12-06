@@ -1,13 +1,13 @@
 # RESTful API Go Fiber Boilerplate
 
 ![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/indrayyana/go-fiber-boilerplate)](https://goreportcard.com/report/github.com/indrayyana/go-fiber-boilerplate)
+[![Go Report Card](https://goreportcard.com/badge/github.com/indravscode/go-fiber-boilerplate)](https://goreportcard.com/report/github.com/indravscode/go-fiber-boilerplate)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
-![Repository size](https://img.shields.io/github/repo-size/indrayyana/go-fiber-boilerplate?color=56BEB8)
-![Build](https://github.com/indrayyana/go-fiber-boilerplate/workflows/Build/badge.svg)
-![Test](https://github.com/indrayyana/go-fiber-boilerplate/workflows/Test/badge.svg)
-![Linter](https://github.com/indrayyana/go-fiber-boilerplate/workflows/Linter/badge.svg)
+![Repository size](https://img.shields.io/github/repo-size/indravscode/go-fiber-boilerplate?color=56BEB8)
+![Build](https://github.com/indravscode/go-fiber-boilerplate/workflows/Build/badge.svg)
+![Test](https://github.com/indravscode/go-fiber-boilerplate/workflows/Test/badge.svg)
+![Linter](https://github.com/indravscode/go-fiber-boilerplate/workflows/Linter/badge.svg)
 
 A boilerplate/starter project for quickly building RESTful APIs using Go, Fiber, and PostgreSQL. Inspired by the Express boilerplate.
 
@@ -28,7 +28,7 @@ If you would still prefer to do the installation manually, follow these steps:
 Clone the repo:
 
 ```bash
-git clone --depth 1 https://github.com/indrayyana/go-fiber-boilerplate.git
+git clone --depth 1 https://github.com/indravscode/go-fiber-boilerplate.git
 cd go-fiber-boilerplate
 rm -rf ./.git
 ```
@@ -223,8 +223,8 @@ src\
 
 To view the list of available APIs and their specifications, run the server and go to `http://localhost:3000/v1/docs` in your browser.
 
-![Auth](https://indrayyana.github.io/assets/images/swagger1.png)
-![User](https://indrayyana.github.io/assets/images/swagger2.png)
+![Auth](https://indravscode.github.io/assets/images/swagger1.png)
+![User](https://indravscode.github.io/assets/images/swagger2.png)
 
 This documentation page is automatically generated using the [Swag](https://github.com/swaggo/swag) definitions written as comments in the controller files.
 
@@ -410,4 +410,4 @@ If you find this boilerplate useful, consider giving it a star! ⭐
 
 ## Contributors
 
-[![Contributors](https://contrib.rocks/image?c=6&repo=indrayyana/go-fiber-boilerplate)](https://github.com/indrayyana/go-fiber-boilerplate/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?c=6&repo=indravscode/go-fiber-boilerplate)](https://github.com/indravscode/go-fiber-boilerplate/graphs/contributors)
