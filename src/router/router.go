@@ -2,6 +2,7 @@ package router
 
 import (
 	"app/src/config"
+	"app/src/middleware/cache"
 	"app/src/redis"
 	"app/src/service"
 	"app/src/validation"
@@ -66,7 +67,24 @@ func Routes(app *fiber.App, db *gorm.DB) {
 	tokenService := service.NewTokenService(db, validate, userService, sessionService)
 	authService := service.NewAuthService(db, validate, userService, tokenService)
 
+	// Initialize cache middleware
+	var cacheMiddleware fiber.Handler
+	if redisClient != nil {
+		cacheMiddleware = cache.NewResponseCacheMiddleware(redisClient)
+		if cacheMiddleware != nil {
+			logrus.Info("Cache middleware initialized")
+		}
+	} else {
+		logrus.Info("Cache middleware disabled (Redis unavailable)")
+	}
+
 	v1 := app.Group("/v1")
+
+	// Apply cache middleware to all routes
+	// The middleware's Next() function will skip auth endpoints and write operations automatically
+	if cacheMiddleware != nil {
+		app.Use(cacheMiddleware)
+	}
 
 	HealthCheckRoutes(v1, healthCheckService)
 	AuthRoutes(v1, authService, userService, tokenService, emailService, sessionService)
