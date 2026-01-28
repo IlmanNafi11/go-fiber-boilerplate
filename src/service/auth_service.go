@@ -1,6 +1,7 @@
 package service
 
 import (
+	"app/src/cache"
 	"app/src/config"
 	"app/src/model"
 	"app/src/response"
@@ -24,22 +25,24 @@ type AuthService interface {
 }
 
 type authService struct {
-	Log          *logrus.Logger
-	DB           *gorm.DB
-	Validate     *validator.Validate
-	UserService  UserService
-	TokenService TokenService
+	Log              *logrus.Logger
+	DB               *gorm.DB
+	Validate         *validator.Validate
+	UserService      UserService
+	TokenService     TokenService
+	CacheInvalidator *cache.CacheInvalidator
 }
 
 func NewAuthService(
-	db *gorm.DB, validate *validator.Validate, userService UserService, tokenService TokenService,
+	db *gorm.DB, validate *validator.Validate, userService UserService, tokenService TokenService, cacheInvalidator *cache.CacheInvalidator,
 ) AuthService {
 	return &authService{
-		Log:          utils.Log,
-		DB:           db,
-		Validate:     validate,
-		UserService:  userService,
-		TokenService: tokenService,
+		Log:              utils.Log,
+		DB:               db,
+		Validate:         validate,
+		UserService:      userService,
+		TokenService:     tokenService,
+		CacheInvalidator: cacheInvalidator,
 	}
 }
 
@@ -101,6 +104,14 @@ func (s *authService) Logout(c *fiber.Ctx, req *validation.Logout) error {
 
 	err = s.TokenService.DeleteToken(c, config.TokenTypeRefresh, token.UserID.String())
 
+	// Invalidate cache after successful logout
+	if s.CacheInvalidator != nil {
+		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), token.UserID.String()); err != nil {
+			s.Log.Warnf("failed to invalidate user cache on logout: %v", err)
+			// Don't fail logout - cache invalidation is best-effort
+		}
+	}
+
 	return err
 }
 
@@ -122,6 +133,14 @@ func (s *authService) RefreshAuth(c *fiber.Ctx, req *validation.RefreshToken) (*
 	newTokens, err := s.TokenService.GenerateAuthTokens(c, user)
 	if err != nil {
 		return nil, fiber.ErrInternalServerError
+	}
+
+	// Invalidate cache after successful token refresh
+	if s.CacheInvalidator != nil {
+		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), user.ID.String()); err != nil {
+			s.Log.Warnf("failed to invalidate user cache on token refresh: %v", err)
+			// Don't fail refresh - cache invalidation is best-effort
+		}
 	}
 
 	return newTokens, err
