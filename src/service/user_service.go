@@ -1,6 +1,7 @@
 package service
 
 import (
+	"app/src/cache"
 	"app/src/config"
 	"app/src/model"
 	"app/src/utils"
@@ -27,18 +28,20 @@ type UserService interface {
 }
 
 type userService struct {
-	Log            *logrus.Logger
-	DB             *gorm.DB
-	Validate       *validator.Validate
-	SessionService SessionService
+	Log              *logrus.Logger
+	DB               *gorm.DB
+	Validate         *validator.Validate
+	SessionService   SessionService
+	CacheInvalidator *cache.CacheInvalidator
 }
 
-func NewUserService(db *gorm.DB, validate *validator.Validate, sessionService SessionService) UserService {
+func NewUserService(db *gorm.DB, validate *validator.Validate, sessionService SessionService, cacheInvalidator *cache.CacheInvalidator) UserService {
 	return &userService{
-		Log:            utils.Log,
-		DB:             db,
-		Validate:       validate,
-		SessionService: sessionService,
+		Log:              utils.Log,
+		DB:               db,
+		Validate:         validate,
+		SessionService:   sessionService,
+		CacheInvalidator: cacheInvalidator,
 	}
 }
 
@@ -183,6 +186,14 @@ func (s *userService) UpdateUser(c *fiber.Ctx, req *validation.UpdateUser, id st
 		s.Log.Errorf("Failed to update user: %+v", result.Error)
 	}
 
+	// Invalidate API response cache after successful update
+	if s.CacheInvalidator != nil {
+		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), id); err != nil {
+			s.Log.Warnf("failed to invalidate user cache on update: %v", err)
+			// Don't fail the operation - cache invalidation is best-effort
+		}
+	}
+
 	// Handle cache invalidation and session regeneration
 	if s.SessionService != nil {
 		if roleChanged {
@@ -286,6 +297,14 @@ func (s *userService) DeleteUser(c *fiber.Ctx, id string) error {
 
 	if result.Error != nil {
 		s.Log.Errorf("Failed to delete user: %+v", result.Error)
+	}
+
+	// Invalidate API response cache after successful deletion
+	if s.CacheInvalidator != nil {
+		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), id); err != nil {
+			s.Log.Warnf("failed to invalidate user cache on deletion: %v", err)
+			// Don't fail deletion - graceful degradation
+		}
 	}
 
 	// Invalidate cache after successful deletion (SESS-04)
