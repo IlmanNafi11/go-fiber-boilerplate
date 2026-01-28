@@ -31,10 +31,11 @@ type authService struct {
 	UserService      UserService
 	TokenService     TokenService
 	CacheInvalidator *cache.CacheInvalidator
+	SessionService   SessionService
 }
 
 func NewAuthService(
-	db *gorm.DB, validate *validator.Validate, userService UserService, tokenService TokenService, cacheInvalidator *cache.CacheInvalidator,
+	db *gorm.DB, validate *validator.Validate, userService UserService, tokenService TokenService, cacheInvalidator *cache.CacheInvalidator, sessionService SessionService,
 ) AuthService {
 	return &authService{
 		Log:              utils.Log,
@@ -43,6 +44,7 @@ func NewAuthService(
 		UserService:      userService,
 		TokenService:     tokenService,
 		CacheInvalidator: cacheInvalidator,
+		SessionService:   sessionService,
 	}
 }
 
@@ -104,10 +106,18 @@ func (s *authService) Logout(c *fiber.Ctx, req *validation.Logout) error {
 
 	err = s.TokenService.DeleteToken(c, config.TokenTypeRefresh, token.UserID.String())
 
-	// Invalidate cache after successful logout
-	if s.CacheInvalidator != nil {
-		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), token.UserID.String()); err != nil {
-			s.Log.Warnf("failed to invalidate user cache on logout: %v", err)
+	// Invalidate session cache after successful logout (INVL-05)
+	if err == nil && s.SessionService != nil {
+		if invalidateErr := s.SessionService.InvalidateSession(c.Context(), token.UserID.String()); invalidateErr != nil {
+			s.Log.Warnf("failed to invalidate session cache on logout: %v", invalidateErr)
+			// Don't fail logout - cache invalidation is best-effort
+		}
+	}
+
+	// Invalidate API response cache after successful logout
+	if err == nil && s.CacheInvalidator != nil {
+		if invalidateErr := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), token.UserID.String()); invalidateErr != nil {
+			s.Log.Warnf("failed to invalidate user cache on logout: %v", invalidateErr)
 			// Don't fail logout - cache invalidation is best-effort
 		}
 	}
@@ -130,15 +140,23 @@ func (s *authService) RefreshAuth(c *fiber.Ctx, req *validation.RefreshToken) (*
 		return nil, fiber.NewError(fiber.StatusUnauthorized, "Please authenticate")
 	}
 
+	// Invalidate old session cache before generating new tokens (INVL-03)
+	if s.SessionService != nil {
+		if invalidateErr := s.SessionService.InvalidateSession(c.Context(), user.ID.String()); invalidateErr != nil {
+			s.Log.Warnf("failed to invalidate old session cache on token refresh: %v", invalidateErr)
+			// Don't fail refresh - cache invalidation is best-effort
+		}
+	}
+
 	newTokens, err := s.TokenService.GenerateAuthTokens(c, user)
 	if err != nil {
 		return nil, fiber.ErrInternalServerError
 	}
 
-	// Invalidate cache after successful token refresh
+	// Invalidate API response cache after successful token refresh
 	if s.CacheInvalidator != nil {
-		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), user.ID.String()); err != nil {
-			s.Log.Warnf("failed to invalidate user cache on token refresh: %v", err)
+		if invalidateErr := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), user.ID.String()); invalidateErr != nil {
+			s.Log.Warnf("failed to invalidate user cache on token refresh: %v", invalidateErr)
 			// Don't fail refresh - cache invalidation is best-effort
 		}
 	}

@@ -89,6 +89,14 @@ func (s *tokenService) DeleteToken(c *fiber.Ctx, tokenType string, userID string
 		s.Log.Errorf("Failed to delete token: %+v", result.Error)
 	}
 
+	// Invalidate session cache after successful token deletion (INVL-04)
+	if result.Error == nil && s.SessionService != nil {
+		if invalidateErr := s.SessionService.InvalidateSession(c.Context(), userID); invalidateErr != nil {
+			s.Log.Warnf("failed to invalidate session cache on token deletion: %v", invalidateErr)
+			// Don't fail deletion - cache invalidation is best-effort
+		}
+	}
+
 	return result.Error
 }
 

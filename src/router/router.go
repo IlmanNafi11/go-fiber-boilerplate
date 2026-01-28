@@ -96,7 +96,7 @@ func Routes(app *fiber.App, db *gorm.DB) {
 
 	userService := service.NewUserService(db, validate, sessionService, cacheInvalidator)
 	tokenService := service.NewTokenService(db, validate, userService, sessionService)
-	authService := service.NewAuthService(db, validate, userService, tokenService, cacheInvalidator)
+	authService := service.NewAuthService(db, validate, userService, tokenService, cacheInvalidator, sessionService)
 
 	// Initialize cache middleware
 	var cacheMiddleware fiber.Handler
