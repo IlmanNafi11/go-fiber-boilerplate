@@ -28,18 +28,20 @@ type TokenService interface {
 }
 
 type tokenService struct {
-	Log         *logrus.Logger
-	DB          *gorm.DB
-	Validate    *validator.Validate
-	UserService UserService
+	Log            *logrus.Logger
+	DB             *gorm.DB
+	Validate       *validator.Validate
+	UserService    UserService
+	SessionService SessionService
 }
 
-func NewTokenService(db *gorm.DB, validate *validator.Validate, userService UserService) TokenService {
+func NewTokenService(db *gorm.DB, validate *validator.Validate, userService UserService, sessionService SessionService) TokenService {
 	return &tokenService{
-		Log:         utils.Log,
-		DB:          db,
-		Validate:    validate,
-		UserService: userService,
+		Log:            utils.Log,
+		DB:             db,
+		Validate:       validate,
+		UserService:    userService,
+		SessionService: sessionService,
 	}
 }
 
@@ -139,6 +141,30 @@ func (s *tokenService) GenerateAuthTokens(c *fiber.Ctx, user *model.User) (*res.
 
 	if err = s.SaveToken(c, refreshToken, user.ID.String(), config.TokenTypeRefresh, refreshTokenExpires); err != nil {
 		return nil, err
+	}
+
+	// Cache user session with session ID generation (SESS-01, SESS-07)
+	if s.SessionService != nil {
+		if cacheErr := s.SessionService.CacheUserSession(c.Context(), user.ID.String(), user); cacheErr != nil {
+			s.Log.Warn("Failed to cache user session, continuing without cache", "error", cacheErr)
+			// Continue with token generation - graceful degradation
+		} else {
+			// Set session cookie (SESS-06)
+			sessionID, err := s.SessionService.GenerateSessionID()
+			if err != nil {
+				s.Log.Warn("Failed to generate session ID for cookie", "error", err)
+			} else {
+				c.Cookie(&fiber.Cookie{
+					Name:     "session_id",
+					Value:    sessionID,
+					MaxAge:   config.SessionCacheTTL * 60, // Convert minutes to seconds
+					Path:     "/",
+					Secure:   config.IsProd, // HTTPS only in production
+					HTTPOnly: true,          // Prevent JavaScript access
+					SameSite: "Lax",         // Allow top-level navigation
+				})
+			}
+		}
 	}
 
 	return &res.Tokens{
