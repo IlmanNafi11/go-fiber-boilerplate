@@ -28,6 +28,11 @@ var (
 	GoogleClientID      string
 	GoogleClientSecret  string
 	RedirectURL         string
+	RedisEnabled        bool
+	RedisHost           string
+	RedisPort           int
+	RedisPassword       string
+	RedisDB             int
 )
 
 func init() {
@@ -63,6 +68,17 @@ func init() {
 	GoogleClientID = viper.GetString("GOOGLE_CLIENT_ID")
 	GoogleClientSecret = viper.GetString("GOOGLE_CLIENT_SECRET")
 	RedirectURL = viper.GetString("REDIRECT_URL")
+
+	// redis configuration
+	RedisHost = viper.GetString("REDIS_HOST")
+	RedisPort = viper.GetInt("REDIS_PORT")
+	RedisPassword = viper.GetString("REDIS_PASSWORD")
+	RedisDB = viper.GetInt("REDIS_DB")
+
+	// Validate Redis configuration and set RedisEnabled flag
+	if err := ValidateRedisConfig(RedisHost, RedisPort, RedisDB); err != nil {
+		utils.Log.Fatal(err)
+	}
 }
 
 func loadConfig() {
