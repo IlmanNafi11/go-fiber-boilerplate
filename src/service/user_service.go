@@ -300,7 +300,7 @@ func (s *userService) DeleteUser(c *fiber.Ctx, id string) error {
 	}
 
 	// Invalidate API response cache after successful deletion
-	if s.CacheInvalidator != nil {
+	if result.Error == nil && s.CacheInvalidator != nil {
 		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), id); err != nil {
 			s.Log.Warnf("failed to invalidate user cache on deletion: %v", err)
 			// Don't fail deletion - graceful degradation
