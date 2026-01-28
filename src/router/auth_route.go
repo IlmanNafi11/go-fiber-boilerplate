@@ -11,7 +11,7 @@ import (
 
 func AuthRoutes(
 	v1 fiber.Router, a service.AuthService, u service.UserService,
-	t service.TokenService, e service.EmailService,
+	t service.TokenService, e service.EmailService, s service.SessionService,
 ) {
 	authController := controller.NewAuthController(a, u, t, e)
 	config.GoogleConfig()
@@ -24,7 +24,7 @@ func AuthRoutes(
 	auth.Post("/refresh-tokens", authController.RefreshTokens)
 	auth.Post("/forgot-password", authController.ForgotPassword)
 	auth.Post("/reset-password", authController.ResetPassword)
-	auth.Post("/send-verification-email", m.Auth(u), authController.SendVerificationEmail)
+	auth.Post("/send-verification-email", m.Auth(u, s), authController.SendVerificationEmail)
 	auth.Post("/verify-email", authController.VerifyEmail)
 	auth.Get("/google", authController.GoogleLogin)
 	auth.Get("/google-callback", authController.GoogleCallback)

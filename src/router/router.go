@@ -52,15 +52,25 @@ func Routes(app *fiber.App, db *gorm.DB) {
 
 	healthCheckService := service.NewHealthCheckService(db, redis.GetHealthMonitor())
 	emailService := service.NewEmailService()
-	userService := service.NewUserService(db, validate)
-	tokenService := service.NewTokenService(db, validate, userService)
+
+	// Initialize session service
+	var sessionService service.SessionService
+	if redisClient != nil {
+		sessionService = service.NewSessionService(redisClient)
+		logrus.Info("Session service initialized")
+	} else {
+		logrus.Warn("Session service disabled (Redis unavailable)")
+	}
+
+	userService := service.NewUserService(db, validate, sessionService)
+	tokenService := service.NewTokenService(db, validate, userService, sessionService)
 	authService := service.NewAuthService(db, validate, userService, tokenService)
 
 	v1 := app.Group("/v1")
 
 	HealthCheckRoutes(v1, healthCheckService)
-	AuthRoutes(v1, authService, userService, tokenService, emailService)
-	UserRoutes(v1, userService, tokenService)
+	AuthRoutes(v1, authService, userService, tokenService, emailService, sessionService)
+	UserRoutes(v1, userService, tokenService, sessionService)
 	// TODO: add another routes here...
 
 	if !config.IsProd {
