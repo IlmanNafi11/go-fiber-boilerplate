@@ -1,8 +1,9 @@
 package router
 
 import (
+	"app/src/cache"
 	"app/src/config"
-	"app/src/middleware/cache"
+	middlewareCache "app/src/middleware/cache"
 	"app/src/redis"
 	"app/src/service"
 	"app/src/validation"
@@ -63,14 +64,25 @@ func Routes(app *fiber.App, db *gorm.DB) {
 		logrus.Warn("Session service disabled (Redis unavailable)")
 	}
 
-	userService := service.NewUserService(db, validate, sessionService)
+	// Initialize cache invalidator
+	var cacheInvalidator *cache.CacheInvalidator
+	if redisClient != nil {
+		cacheInvalidator = cache.NewCacheInvalidator(redisClient)
+		if cacheInvalidator != nil {
+			logrus.Info("Cache invalidator initialized")
+		}
+	} else {
+		logrus.Info("Cache invalidator disabled (Redis unavailable)")
+	}
+
+	userService := service.NewUserService(db, validate, sessionService, cacheInvalidator)
 	tokenService := service.NewTokenService(db, validate, userService, sessionService)
-	authService := service.NewAuthService(db, validate, userService, tokenService)
+	authService := service.NewAuthService(db, validate, userService, tokenService, cacheInvalidator)
 
 	// Initialize cache middleware
 	var cacheMiddleware fiber.Handler
 	if redisClient != nil {
-		cacheMiddleware = cache.NewResponseCacheMiddleware(redisClient)
+		cacheMiddleware = middlewareCache.NewResponseCacheMiddleware(redisClient)
 		if cacheMiddleware != nil {
 			logrus.Info("Cache middleware initialized")
 		}
