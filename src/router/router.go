@@ -3,6 +3,7 @@ package router
 import (
 	"app/src/cache"
 	"app/src/config"
+	"app/src/middleware"
 	middlewareCache "app/src/middleware/cache"
 	"app/src/redis"
 	"app/src/service"
@@ -55,6 +56,9 @@ func Routes(app *fiber.App, db *gorm.DB) {
 	healthCheckService := service.NewHealthCheckService(db, redis.GetHealthMonitor())
 	emailService := service.NewEmailService()
 
+	// Load rate limit configuration
+	rateLimitConfig := config.LoadRateLimiterConfig()
+
 	// Initialize session service
 	var sessionService service.SessionService
 	if redisClient != nil {
@@ -75,6 +79,21 @@ func Routes(app *fiber.App, db *gorm.DB) {
 		logrus.Info("Cache invalidator disabled (Redis unavailable)")
 	}
 
+	// Initialize rate limiter middleware
+	var rateLimiterMiddleware fiber.Handler
+	if redisClient != nil {
+		rateLimiterMiddleware = middleware.NewRateLimiterMiddleware(redisClient, rateLimitConfig)
+		if rateLimiterMiddleware != nil {
+			logrus.Infof("Rate limiter initialized (max: %d requests per %v for unauthenticated, %d per %v for authenticated)",
+				rateLimitConfig.DefaultMax, rateLimitConfig.DefaultWindow,
+				rateLimitConfig.AuthMax, rateLimitConfig.AuthWindow)
+		} else {
+			logrus.Info("Rate limiter disabled (configuration disabled)")
+		}
+	} else {
+		logrus.Info("Rate limiter disabled (Redis unavailable)")
+	}
+
 	userService := service.NewUserService(db, validate, sessionService, cacheInvalidator)
 	tokenService := service.NewTokenService(db, validate, userService, sessionService)
 	authService := service.NewAuthService(db, validate, userService, tokenService, cacheInvalidator)
@@ -91,6 +110,11 @@ func Routes(app *fiber.App, db *gorm.DB) {
 	}
 
 	v1 := app.Group("/v1")
+
+	// Apply rate limiter middleware to all /v1 routes
+	if rateLimiterMiddleware != nil {
+		v1.Use(rateLimiterMiddleware)
+	}
 
 	// Apply cache middleware to all routes
 	// The middleware's Next() function will skip auth endpoints and write operations automatically
