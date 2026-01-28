@@ -25,6 +25,9 @@ var (
 
 	// redisCB is the circuit breaker instance
 	redisCB *gobreaker.CircuitBreaker[interface{}]
+
+	// healthMonitor is the health monitor instance
+	healthMonitor *HealthMonitor
 )
 
 // RedisClient wraps the go-redis client with circuit breaker protection
@@ -92,9 +95,6 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisClient, error) {
 	setAvailable(true)
 	logrus.Infof("Redis connected successfully: %s:%d (DB: %d)", cfg.Host, cfg.Port, cfg.DB)
 
-	// Start background health monitor
-	go startHealthMonitor(context.Background())
-
 	redisClientInstance := &RedisClient{
 		client:         client,
 		circuitBreaker: cb,
@@ -122,36 +122,6 @@ func IsAvailable() bool {
 	return true
 }
 
-// startHealthMonitor runs periodic health checks in background
-func startHealthMonitor(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			logrus.Info("Health monitor stopped")
-			return
-		case <-ticker.C:
-			if redisClient == nil {
-				continue
-			}
-
-			err := redisClient.Ping(ctx).Err()
-			if err != nil {
-				logrus.Warnf("Redis health check failed: %v", err)
-				setAvailable(false)
-			} else {
-				if atomic.LoadInt32(&redisAvailable) == 0 {
-					logrus.Info("Redis reconnected")
-					setAvailable(true)
-					// TODO: Trigger cache warm-up (Phase 2-6)
-				}
-			}
-		}
-	}
-}
-
 // setAvailable sets the atomic availability flag
 func setAvailable(available bool) {
 	var v int32 = 0
@@ -159,6 +129,38 @@ func setAvailable(available bool) {
 		v = 1
 	}
 	atomic.StoreInt32(&redisAvailable, v)
+}
+
+// InitHealthMonitor creates and initializes the health monitor for Redis
+func InitHealthMonitor(interval time.Duration, onStateChange func(available bool)) *HealthMonitor {
+	if redisClient == nil {
+		logrus.Warn("Cannot create health monitor: Redis client not initialized")
+		return nil
+	}
+	healthMonitor = NewHealthMonitor(redisClient, interval, onStateChange)
+	return healthMonitor
+}
+
+// StartHealthMonitor starts the health monitor in background goroutine
+func StartHealthMonitor() {
+	if healthMonitor == nil {
+		logrus.Warn("Health monitor not initialized, skipping start")
+		return
+	}
+	go healthMonitor.Start()
+}
+
+// StopHealthMonitor stops the health monitor gracefully
+func StopHealthMonitor() {
+	if healthMonitor == nil {
+		return
+	}
+	healthMonitor.Stop()
+}
+
+// GetHealthMonitor returns the health monitor instance
+func GetHealthMonitor() *HealthMonitor {
+	return healthMonitor
 }
 
 // GetClient returns the initialized Redis client
