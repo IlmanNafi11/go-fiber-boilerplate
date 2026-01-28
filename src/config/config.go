@@ -2,6 +2,7 @@ package config
 
 import (
 	"app/src/utils"
+	"strconv"
 
 	"github.com/spf13/viper"
 )
@@ -33,6 +34,7 @@ var (
 	RedisPort           int
 	RedisPassword       string
 	RedisDB             int
+	SessionCacheTTL     int
 )
 
 func init() {
@@ -79,6 +81,9 @@ func init() {
 	if err := ValidateRedisConfig(RedisHost, RedisPort, RedisDB); err != nil {
 		utils.Log.Fatal(err)
 	}
+
+	// Load session cache configuration
+	LoadSessionCacheConfig()
 }
 
 func loadConfig() {
@@ -97,4 +102,36 @@ func loadConfig() {
 	}
 
 	utils.Log.Error("Failed to load any config file")
+}
+
+// LoadSessionCacheConfig loads session cache TTL configuration from environment
+// Default: 30 minutes, Range: 10-120 minutes
+func LoadSessionCacheConfig() {
+	// Default TTL: 30 minutes
+	defaultTTL := 30
+	SessionCacheTTL = defaultTTL
+
+	// Read from environment
+	sessionTTLStr := viper.GetString("SESSION_CACHE_TTL")
+	if sessionTTLStr == "" {
+		utils.Log.Infof("Session cache TTL not specified, using default: %d minutes", defaultTTL)
+		return
+	}
+
+	// Parse to integer
+	sessionTTL, err := strconv.Atoi(sessionTTLStr)
+	if err != nil {
+		utils.Log.Errorf("Invalid SESSION_CACHE_TTL value '%s': %v. Using default: %d minutes", sessionTTLStr, err, defaultTTL)
+		return
+	}
+
+	// Validate range (10-120 minutes for security guardrails)
+	if sessionTTL < 10 || sessionTTL > 120 {
+		utils.Log.Warnf("SESSION_CACHE_TTL value %d minutes is outside allowed range (10-120). Using default: %d minutes", sessionTTL, defaultTTL)
+		return
+	}
+
+	// Apply valid value
+	SessionCacheTTL = sessionTTL
+	utils.Log.Infof("Session cache TTL configured: %d minutes", SessionCacheTTL)
 }
