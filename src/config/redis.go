@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -21,6 +22,15 @@ type RedisConfig struct {
 	DialTimeout  int    `mapstructure:"dial_timeout"`
 	ReadTimeout  int    `mapstructure:"read_timeout"`
 	WriteTimeout int    `mapstructure:"write_timeout"`
+}
+
+// RateLimiterConfig holds rate limiting configuration
+type RateLimiterConfig struct {
+	Enabled       bool          `mapstructure:"enabled" env:"RATE_LIMIT_ENABLED" envDefault:"true"`
+	DefaultMax    int           `mapstructure:"default_max" env:"RATE_LIMIT_MAX" envDefault:"100"`
+	DefaultWindow time.Duration `mapstructure:"default_window" env:"RATE_LIMIT_WINDOW" envDefault:"15m"`
+	AuthMax       int           `mapstructure:"auth_max" env:"RATE_LIMIT_AUTH_MAX" envDefault:"500"`
+	AuthWindow    time.Duration `mapstructure:"auth_window" env:"RATE_LIMIT_AUTH_WINDOW" envDefault:"15m"`
 }
 
 // Validate checks if the Redis configuration is valid
@@ -149,4 +159,36 @@ func LoadRedisConfig() (*RedisConfig, error) {
 	}
 
 	return &config, nil
+}
+
+// LoadRateLimiterConfig loads rate limit configuration from environment variables
+func LoadRateLimiterConfig() *RateLimiterConfig {
+	var config RateLimiterConfig
+
+	// Load enabled flag
+	enabled := viper.GetString("RATE_LIMIT_ENABLED")
+	config.Enabled = enabled == "" || enabled == "true"
+
+	// Load with defaults
+	config.DefaultMax = viper.GetInt("RATE_LIMIT_MAX")
+	if config.DefaultMax <= 0 {
+		config.DefaultMax = 100
+	}
+
+	config.DefaultWindow = viper.GetDuration("RATE_LIMIT_WINDOW")
+	if config.DefaultWindow <= 0 {
+		config.DefaultWindow = 15 * time.Minute // RATE-02: 15-minute sliding window
+	}
+
+	config.AuthMax = viper.GetInt("RATE_LIMIT_AUTH_MAX")
+	if config.AuthMax <= 0 {
+		config.AuthMax = 500 // Higher limit for authenticated users
+	}
+
+	config.AuthWindow = viper.GetDuration("RATE_LIMIT_AUTH_WINDOW")
+	if config.AuthWindow <= 0 {
+		config.AuthWindow = 15 * time.Minute
+	}
+
+	return &config
 }
