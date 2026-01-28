@@ -283,6 +283,14 @@ func (s *userService) UpdatePassOrVerify(c *fiber.Ctx, req *validation.UpdatePas
 		s.Log.Errorf("Failed to update user password or verifiedEmail: %+v", result.Error)
 	}
 
+	// Invalidate API response cache after successful password/verification update
+	if result.Error == nil && s.CacheInvalidator != nil {
+		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), id); err != nil {
+			s.Log.Warnf("failed to invalidate user cache after password change: %v", err)
+			// Don't fail the operation - cache invalidation is best-effort
+		}
+	}
+
 	return result.Error
 }
 
