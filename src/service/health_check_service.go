@@ -1,6 +1,7 @@
 package service
 
 import (
+	"app/src/redis"
 	"app/src/utils"
 	"errors"
 	"runtime"
@@ -12,17 +13,20 @@ import (
 type HealthCheckService interface {
 	GormCheck() error
 	MemoryHeapCheck() error
+	RedisCheck() bool
 }
 
 type healthCheckService struct {
-	Log *logrus.Logger
-	DB  *gorm.DB
+	Log           *logrus.Logger
+	DB            *gorm.DB
+	HealthMonitor *redis.HealthMonitor
 }
 
-func NewHealthCheckService(db *gorm.DB) HealthCheckService {
+func NewHealthCheckService(db *gorm.DB, healthMonitor *redis.HealthMonitor) HealthCheckService {
 	return &healthCheckService{
-		Log: utils.Log,
-		DB:  db,
+		Log:           utils.Log,
+		DB:            db,
+		HealthMonitor: healthMonitor,
 	}
 }
 
@@ -39,6 +43,15 @@ func (s *healthCheckService) GormCheck() error {
 	}
 
 	return nil
+}
+
+// RedisCheck returns true if Redis is available, false otherwise
+func (s *healthCheckService) RedisCheck() bool {
+	if s.HealthMonitor == nil {
+		// Redis not configured or disabled
+		return false
+	}
+	return s.HealthMonitor.IsAvailable()
 }
 
 // MemoryHeapCheck checks if heap memory usage exceeds a threshold
