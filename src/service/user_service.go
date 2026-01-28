@@ -187,7 +187,7 @@ func (s *userService) UpdateUser(c *fiber.Ctx, req *validation.UpdateUser, id st
 	}
 
 	// Invalidate API response cache after successful update
-	if s.CacheInvalidator != nil {
+	if result.Error == nil && s.CacheInvalidator != nil {
 		if err := s.CacheInvalidator.InvalidateUserRelatedCache(c.Context(), id); err != nil {
 			s.Log.Warnf("failed to invalidate user cache on update: %v", err)
 			// Don't fail the operation - cache invalidation is best-effort
