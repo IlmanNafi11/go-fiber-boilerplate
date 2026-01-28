@@ -28,33 +28,46 @@ func NewCacheInvalidator(redisClient *redis.RedisClient) *CacheInvalidator {
 }
 
 // InvalidateUserRelatedCache invalidates all user-related cache entries
-// This includes user list and specific user GET/HEAD responses
+// This includes session cache and user list and specific user GET/HEAD responses
 func (ci *CacheInvalidator) InvalidateUserRelatedCache(ctx context.Context, userID string) error {
-	if ci == nil || ci.redisClient == nil {
+	if ci == nil {
 		return nil
 	}
 
-	// Build invalidation patterns using cache key format from keygen.go
-	patterns := []string{
-		// Invalidate user list (GET /v1/users)
-		"api:response:GET:/users*",
-		// Invalidate user list (HEAD /v1/users)
-		"api:response:HEAD:/users*",
-		// Invalidate specific user (GET /v1/users/:id)
-		fmt.Sprintf("api:response:GET:/users/%s*", userID),
-		// Invalidate specific user (HEAD /v1/users/:id)
-		fmt.Sprintf("api:response:HEAD:/users/%s*", userID),
+	// Log comprehensive invalidation for user
+	logrus.Infof("Invalidating all cache for user %s (session + API response)", userID)
+
+	// Invalidate session cache
+	if err := ci.InvalidateSessionCache(ctx, userID); err != nil {
+		logrus.Warnf("Failed to invalidate session cache for user %s: %v", userID, err)
 	}
 
-	// Invalidate each pattern
-	for _, pattern := range patterns {
-		if err := ci.InvalidateByPattern(ctx, pattern); err != nil {
-			logrus.Warnf("failed to invalidate cache pattern %s: %v", pattern, err)
-			// Don't fail the operation - cache invalidation is best-effort
-		}
+	// Invalidate API response cache
+	// Use existing GetAPIResponseKeyPattern(userID)
+	apiPattern := GetAPIResponseKeyPattern(userID) // "api:response:*:user:{userID}:*"
+
+	if err := ci.InvalidateByPattern(ctx, apiPattern); err != nil {
+		logrus.Warnf("Failed to invalidate API response cache for user %s: %v", userID, err)
 	}
 
 	return nil
+}
+
+// InvalidateSessionCache invalidates session cache for user
+// Uses pattern-based deletion with SCAN for session:user:{userID}
+func (ci *CacheInvalidator) InvalidateSessionCache(ctx context.Context, userID string) error {
+	if ci == nil {
+		return nil // No invalidation if Redis unavailable
+	}
+
+	// Build session cache pattern
+	sessionPattern := GetSessionPattern(userID) // "session:user:{userID}"
+
+	// Log invalidation attempt
+	logrus.Infof("Invalidating session cache for user %s (pattern: %s)", userID, sessionPattern)
+
+	// Use existing InvalidateByPattern (SCAN-based deletion)
+	return ci.InvalidateByPattern(ctx, sessionPattern)
 }
 
 // InvalidateByPattern deletes all cache keys matching the given pattern
