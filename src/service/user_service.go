@@ -1,9 +1,12 @@
 package service
 
 import (
+	"app/src/config"
 	"app/src/model"
 	"app/src/utils"
 	"app/src/validation"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 
 	"github.com/go-playground/validator/v10"
@@ -24,16 +27,18 @@ type UserService interface {
 }
 
 type userService struct {
-	Log      *logrus.Logger
-	DB       *gorm.DB
-	Validate *validator.Validate
+	Log            *logrus.Logger
+	DB             *gorm.DB
+	Validate       *validator.Validate
+	SessionService SessionService
 }
 
-func NewUserService(db *gorm.DB, validate *validator.Validate) UserService {
+func NewUserService(db *gorm.DB, validate *validator.Validate, sessionService SessionService) UserService {
 	return &userService{
-		Log:      utils.Log,
-		DB:       db,
-		Validate: validate,
+		Log:            utils.Log,
+		DB:             db,
+		Validate:       validate,
+		SessionService: sessionService,
 	}
 }
 
@@ -136,9 +141,18 @@ func (s *userService) UpdateUser(c *fiber.Ctx, req *validation.UpdateUser, id st
 		return nil, err
 	}
 
-	if req.Email == "" && req.Name == "" && req.Password == "" {
+	if req.Email == "" && req.Name == "" && req.Password == "" && req.Role == "" {
 		return nil, fiber.NewError(fiber.StatusBadRequest, "Invalid Request")
 	}
+
+	// Get current user to detect role changes
+	currentUser, err := s.GetUserByID(c, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if role is changing (privilege elevation detection, SESS-07)
+	roleChanged := req.Role != "" && req.Role != currentUser.Role
 
 	if req.Password != "" {
 		hashedPassword, err := utils.HashPassword(req.Password)
@@ -152,6 +166,7 @@ func (s *userService) UpdateUser(c *fiber.Ctx, req *validation.UpdateUser, id st
 		Name:     req.Name,
 		Password: req.Password,
 		Email:    req.Email,
+		Role:     req.Role,
 	}
 
 	result := s.DB.WithContext(c.Context()).Where("id = ?", id).Updates(updateBody)
@@ -166,6 +181,55 @@ func (s *userService) UpdateUser(c *fiber.Ctx, req *validation.UpdateUser, id st
 
 	if result.Error != nil {
 		s.Log.Errorf("Failed to update user: %+v", result.Error)
+	}
+
+	// Handle cache invalidation and session regeneration
+	if s.SessionService != nil {
+		if roleChanged {
+			// Role changed - regenerate session ID for security (SESS-07 privilege elevation)
+			bytes := make([]byte, 32)
+			if _, err := rand.Read(bytes); err != nil {
+				s.Log.Warn("Failed to generate new session ID, using cache invalidation only", "error", err)
+				// Invalidate old cache
+				if invalidateErr := s.SessionService.InvalidateSession(c.Context(), id); invalidateErr != nil {
+					s.Log.Warn("Failed to invalidate cache", "error", invalidateErr)
+				}
+				return nil, fiber.NewError(fiber.StatusInternalServerError, "Session update failed")
+			}
+			newSessionID := base64.URLEncoding.EncodeToString(bytes)
+
+			// Invalidate old cache and set new one with new session ID
+			if invalidateErr := s.SessionService.InvalidateSession(c.Context(), id); invalidateErr != nil {
+				s.Log.Warn("Failed to invalidate old cache", "error", invalidateErr)
+			}
+
+			// Get updated user data
+			updatedUser, err := s.GetUserByID(c, id)
+			if err != nil {
+				return nil, err
+			}
+
+			// Cache user with new session ID
+			if cacheErr := s.SessionService.CacheUserSession(c.Context(), id, updatedUser); cacheErr != nil {
+				s.Log.Warn("Failed to cache user with new session", "error", cacheErr)
+			}
+
+			// Update session cookie
+			c.Cookie(&fiber.Cookie{
+				Name:     "session_id",
+				Value:    newSessionID,
+				MaxAge:   config.SessionCacheTTL * 60, // Convert minutes to seconds
+				Path:     "/",
+				Secure:   config.IsProd,
+				HTTPOnly: true,
+				SameSite: "Lax",
+			})
+		} else {
+			// Profile changed but not role - just invalidate cache (SESS-03)
+			if invalidateErr := s.SessionService.InvalidateSession(c.Context(), id); invalidateErr != nil {
+				s.Log.Warn("Failed to invalidate cache on user update", "error", invalidateErr)
+			}
+		}
 	}
 
 	user, err := s.GetUserByID(c, id)
@@ -222,6 +286,14 @@ func (s *userService) DeleteUser(c *fiber.Ctx, id string) error {
 
 	if result.Error != nil {
 		s.Log.Errorf("Failed to delete user: %+v", result.Error)
+	}
+
+	// Invalidate cache after successful deletion (SESS-04)
+	if s.SessionService != nil {
+		if invalidateErr := s.SessionService.InvalidateSession(c.Context(), id); invalidateErr != nil {
+			s.Log.Warn("Failed to invalidate cache on user deletion", "error", invalidateErr)
+			// Don't fail deletion - graceful degradation
+		}
 	}
 
 	return result.Error

@@ -9,8 +9,9 @@ type CreateUser struct {
 
 type UpdateUser struct {
 	Name     string `json:"name,omitempty" validate:"omitempty,max=50" example:"fake name"`
-	Email    string `json:"email" validate:"omitempty,email,max=50" example:"fake@example.com"`
+	Email    string `json:"email,omitempty" validate:"omitempty,email,max=50" example:"fake@example.com"`
 	Password string `json:"password,omitempty" validate:"omitempty,min=8,max=20,password" example:"password1"`
+	Role     string `json:"role,omitempty" validate:"omitempty,oneof=user admin" example:"user"`
 }
 
 type UpdatePassOrVerify struct {
